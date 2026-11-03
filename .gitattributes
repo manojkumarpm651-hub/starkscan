@@ -1,0 +1,23 @@
+# Normalise to LF in the repository by default.
+* text=auto eol=lf
+
+# Windows PowerShell 5.1 reads a BOM-less script as ANSI and misparses any
+# non-ASCII character in it. These files are stored UTF-8 with a BOM and CRLF
+# deliberately; checking them out any other way breaks the desktop app.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+
+# Go tooling expects LF regardless of platform.
+*.go  text eol=lf
+go.mod text eol=lf
+
+# Plain-text documentation ships inside release archives, where the build
+# rewrites line endings per target platform. Keep LF as the stored form.
+*.txt text eol=lf
+*.md  text eol=lf
+
+# Never alter these if any are ever added.
+*.png binary
+*.zip binary
+*.gz  binary
+*.exe binary

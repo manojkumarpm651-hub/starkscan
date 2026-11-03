@@ -1,0 +1,84 @@
+starkscan __VERSION__ - shareable packages
+=====================================================================
+Built __BUILDDATE__ from Project Stark\starkscan.
+
+This folder is the ONLY thing you need to give someone. Everything in
+it is self-contained: no installer, no runtime, no source tree, and no
+Go toolchain on the receiving machine.
+
+This note is for YOU, the sender. Each package contains its own
+README.txt and LIMITATIONS.txt for the recipient.
+
+
+WHICH FILE TO SEND
+---------------------------------------------------------------------
+  Windows 10/11             starkscan-__VERSION__-windows-amd64.zip
+  Linux (Intel/AMD)         starkscan-__VERSION__-linux-amd64.tar.gz
+  Linux (ARM, Raspberry Pi) starkscan-__VERSION__-linux-arm64.tar.gz
+  macOS (Apple Silicon)     starkscan-__VERSION__-darwin-arm64.tar.gz
+
+Send ONE archive. Only the Windows package includes the desktop GUI;
+every platform gets the full command-line feature set.
+
+There is no macOS Intel (x86_64) build. Add "darwin/amd64" to the
+targets in build.ps1 if you need one.
+
+
+SEND THE CHECKSUMS SEPARATELY
+---------------------------------------------------------------------
+SHA256SUMS.txt lists the hash of every archive here.
+
+You are asking someone to run a security tool. Give them a way to
+check it arrived intact, and send that check through a DIFFERENT
+channel than the file - hashes attached to the same email as the file
+prove nothing, because anyone who could alter one could alter both.
+
+They verify with:
+    Windows      Get-FileHash .\starkscan-__VERSION__-windows-amd64.zip -Algorithm SHA256
+    Linux/macOS  shasum -a 256 starkscan-__VERSION__-linux-amd64.tar.gz
+
+Each archive ALSO carries its own SHA256SUMS.txt covering the files
+inside it, so the payload can be verified again after extraction.
+
+
+TELL THEM THESE THREE THINGS
+---------------------------------------------------------------------
+1. The binaries are NOT code-signed. Windows SmartScreen will warn,
+   and macOS Gatekeeper will quarantine. Both are behaving correctly.
+   The package README explains how to clear each.
+
+2. Files that arrive from another machine are marked blocked by
+   Windows. Before first run:
+       Get-ChildItem -Recurse | Unblock-File
+
+3. Point them at LIMITATIONS.txt inside the package. It documents
+   what the scanner does NOT catch, including one known way to defeat
+   its folder confinement (a hardlink) and the fact that UTF-16 files
+   are never searched for secrets. A clean report is not proof that
+   files are safe, and they should know that before relying on one.
+
+
+LICENSING - DECIDE BEFORE YOU SHARE WIDELY
+---------------------------------------------------------------------
+No licence file is included. By default that means all rights
+reserved: recipients have no explicit permission to redistribute or
+modify this. That is fine for handing it to a colleague, and a
+problem if you intend to publish it.
+
+Add a LICENSE file stating your terms before wider distribution.
+
+
+KEEPING THIS FOLDER CURRENT
+---------------------------------------------------------------------
+These archives are a snapshot. They do NOT update when the source
+changes. Shipping a stale build of a security tool is worse than
+shipping none, because the version string will not match the fixes
+you think are in it.
+
+To rebuild and refresh this folder in one step:
+
+    cd ..\starkscan
+    .\build.ps1 -Version <new-version> -All -ShareDir ..\share
+
+The build refuses to produce a release unless "go vet" and the full
+test suite pass first.

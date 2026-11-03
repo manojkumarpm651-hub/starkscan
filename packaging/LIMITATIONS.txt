@@ -1,0 +1,114 @@
+starkscan __VERSION__ - what this tool does NOT catch
+=====================================================================
+A clean report means these rules found nothing. It does not mean the
+files are safe. Everything below was demonstrated against this exact
+build, not inferred from reading the code.
+
+Read this before you rely on a clean result.
+
+
+1. THE CONFINEMENT GUARANTEE HAS ONE KNOWN BYPASS
+---------------------------------------------------------------------
+A HARDLINK inside a scanned folder, pointing at a file outside it,
+will be read and its contents reported. No warning is issued, and the
+report shows the in-scope path, so the substitution is invisible in
+the output.
+
+Path resolution cannot catch this. A hardlink is not a reparse point:
+the file genuinely has two equal directory entries, and the one inside
+your scope is as real as the one outside. Symlinks and junctions ARE
+correctly refused; hardlinks are not.
+
+  Practical effect: do not rely on scope confinement alone when
+  pointing the scanner at a directory an untrusted party can write to.
+
+
+2. FILES THAT ARE SILENTLY NOT SEARCHED FOR SECRETS
+---------------------------------------------------------------------
+  UTF-16 text.  A NUL byte in the first 8 KB marks a file as binary,
+  and UTF-16 text is half NUL bytes. This is Windows' own encoding for
+  redirected PowerShell output and many exported configuration files,
+  so these misses are routine rather than exotic. Such files are still
+  counted as "scanned" in the summary.
+
+  Binaries.  Secrets compiled into an .exe, .dll, or database file are
+  not found; the secrets check is skipped for binary content entirely.
+
+  Archives.  A .zip, .tar.gz, or .7z holding credentials is opaque.
+  Only Office macro and remote-template checks look inside a ZIP.
+
+
+3. A REAL SECRET CAN BE SKIPPED BY WHAT IT SPELLS
+---------------------------------------------------------------------
+Values containing example, sample, test, fake, dummy, changeme,
+placeholder, redacted and similar words are treated as documentation
+and dropped - even when the value is a structurally valid credential.
+An AWS key that happens to spell one of those words is not reported.
+
+
+4. SECRETS THAT ARE NOT LITERAL TEXT
+---------------------------------------------------------------------
+Out of reach by construction, because this matches byte patterns:
+  - split by concatenation:  "AKIA" + "2E0KZ9XQ4TRVBN51"
+  - base64 or hex wrapped
+  - low-entropy passphrases (correcthorsebatterystaple)
+  - a download cradle split across two files (each half looks benign)
+
+
+5. REPORTING CAPS AND FILTERS THAT HIDE THINGS
+---------------------------------------------------------------------
+  Only 15 findings per rule per file are reported, and the report does
+  not say when more were withheld. A file padded with decoys can push
+  real findings out of view.
+
+  SCAN01 (file skipped, too large) and SCOPE01 (out-of-scope link
+  refused) are ordinary findings subject to -min-severity. At
+  -min-severity high, a run that skipped files says nothing about it.
+  Keep the threshold at low if you need the coverage notices.
+
+
+6. PERMISSION ANALYSIS IS SHALLOW
+---------------------------------------------------------------------
+It reports GRANTED BREADTH, not EFFECTIVE ACCESS.
+
+  - Directories are never inspected, only files. A directory letting a
+    broad principal create or replace files - the classic file-planting
+    vector - produces no finding.
+  - Deny ACEs are skipped, so a file that grants Everyone write and
+    separately denies it is still reported (a false positive).
+  - Group membership is not resolved. A custom group that happens to
+    contain everyone is not flagged.
+  - Only well-known broad SIDs are matched (Everyone, Authenticated
+    Users, Users, Guests, Anonymous, Power Users).
+  - On Linux and macOS only POSIX mode bits are read.
+
+
+7. OPERATIONAL FOOTGUNS
+---------------------------------------------------------------------
+  -exclude is case-sensitive, including on Windows where the
+  filesystem is not. "-exclude node_modules" does NOT exclude a folder
+  named "Node_Modules". Nothing warns you.
+
+  -out file permissions are not enforced on Windows. The 0600 mode is
+  a no-op there and the report inherits the destination directory's
+  ACL. A report written into a shared folder is readable by whoever
+  can read that folder - including the redacted evidence and the full
+  paths of every finding.
+
+  High-entropy executables are false positives as often as not.
+  Installers and self-extracting archives are indistinguishable from
+  packed malware by entropy alone. That finding stays at Medium.
+
+
+8. WHAT THIS IS NOT
+---------------------------------------------------------------------
+Not an antivirus. Outside the optional -hashes list this is pattern and
+behaviour matching with no maintained signature feed. It complements an
+endpoint AV product; it does not replace one.
+
+Not a sandbox. Confinement is enforced inside the process, not by the
+operating system. A bug in this program could still read outside the
+selected scope, and a compromised process is not contained.
+
+Not a compliance control. It has no notion of policy, baselines, or
+evidence retention.

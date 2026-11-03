@@ -1,0 +1,21 @@
+# Build output. Everything here is reproducible from source with build.ps1,
+# and release archives do not belong in version control.
+/dist/
+/share/
+
+# Local binaries produced by "go build" during development.
+*.exe
+!packaging/**/*.exe
+
+# Go workspace and coverage artefacts
+go.work
+go.work.sum
+*.out
+*.test
+
+# Editor and OS noise
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
