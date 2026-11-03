@@ -42,6 +42,7 @@ var (
 	googleKey      = tok("AI", "zaSyD9fKq2mZx7LpR4vNc8TbWy1JdHs3GaE6u")
 	sendgridKey    = tok("SG", ".QWkq2mZx7LpR4vNc8TbWy1.QWkq2mZx7LpR4vNc8TbWy1JdHs3GaE6uQiOlZzXcVbN")
 	npmToken       = tok("npm", "_QWkq2mZx7LpR4vNc8TbWy1JdHs3GaE6uQiOl")
+	openaiKey      = tok("sk-", "QWkq2mZx7LpR4vNc8TbWy1JdHs3GaE6uQiOlZzXc")
 	jwt            = tok("ey", "JhbGciOiJIUzI1NiJ9.", "ey", "JzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N")
 )
 

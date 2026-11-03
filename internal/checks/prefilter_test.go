@@ -73,7 +73,7 @@ var rulePositives = map[string]string{
 	"SEC008": "-----BEGIN RSA PRIVATE KEY-----",
 	"SEC009": "sg = " + sendgridKey,
 	"SEC010": "k = " + anthropicShort,
-	"SEC011": "k = sk-QWkq2mZx7LpR4vNc8TbWy1JdHs3GaE6uQiOlZzXc",
+	"SEC011": "k = " + openaiKey,
 	"SEC012": npmToken,
 	"SEC013": `twilio_auth_token = "QWkq2mZx7LpR4vNc8TbWy1JdHs3GaE6u"`,
 	"SEC014": "postgres://admin:Hunter2Trombone@db:5432/x",
