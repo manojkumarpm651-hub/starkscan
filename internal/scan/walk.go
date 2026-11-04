@@ -18,6 +18,10 @@ type Options struct {
 	MaxFileSize int64    // files larger than this are recorded but not read
 	Workers     int      // concurrent checkers
 	Exclude     []string // glob patterns matched against base name and relative path
+	// FollowHardLinks reads content that is also reachable from outside the
+	// scope. Off by default: the whole point of the scope is that outside
+	// content does not reach the report.
+	FollowHardLinks bool
 }
 
 // largeFileBytes is the size at which a file's contents dominate memory and
@@ -113,11 +117,12 @@ func (w *Walker) produce(ctx context.Context, opts Options, st *Stats, jobs chan
 		atomic.AddInt64(&st.Files, 1)
 		atomic.AddInt64(&st.Bytes, info.Size())
 		f := &File{
-			Real:    real,
-			Disp:    w.Scope.Display(real),
-			Info:    info,
-			sc:      w.Scope,
-			maxRead: opts.MaxFileSize,
+			Real:         real,
+			Disp:         w.Scope.Display(real),
+			Info:         info,
+			sc:           w.Scope,
+			maxRead:      opts.MaxFileSize,
+			followLinked: opts.FollowHardLinks,
 		}
 		select {
 		case jobs <- f:

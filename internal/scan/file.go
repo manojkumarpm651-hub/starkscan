@@ -2,7 +2,7 @@
 package scan
 
 import (
-	"bytes"
+	"fmt"
 	"io"
 	"io/fs"
 	"path/filepath"
@@ -43,6 +43,47 @@ type File struct {
 	lineOnce   sync.Once
 	memory     bool // content came from NewMemoryFile; it has no path on disk
 	lineIndex  []int
+
+	textOnce sync.Once
+	text     []byte
+	encoding Encoding
+
+	links        scope.LinkReport
+	followLinked bool // read content even when it is reachable from outside
+}
+
+// LinkReport describes the other names this file's content is reachable by.
+// Reading it loads the file, which is where the check happens.
+func (f *File) LinkReport() scope.LinkReport {
+	f.Content()
+	return f.links
+}
+
+// Text returns the content decoded to UTF-8, which is what every rule that
+// matches text should look at.
+//
+// For the common case it is the same bytes as Content, returned without
+// copying. For UTF-16 it is the decoded form, which is the only way those
+// files get scanned at all: their raw bytes are half NULs and would be judged
+// binary. Offsets into this view are what LineAt converts, so a reported line
+// number matches what a person sees opening the file in an editor.
+func (f *File) Text() []byte {
+	f.textOnce.Do(func() {
+		c, err := f.Content()
+		if err != nil {
+			return
+		}
+		f.text, f.encoding = DecodeText(c)
+	})
+	return f.text
+}
+
+// Encoding reports how the file's bytes spell out text. Worth surfacing in a
+// finding: "this was UTF-16" explains why a line number will not match a naive
+// byte offset into the file.
+func (f *File) Encoding() Encoding {
+	f.Text()
+	return f.encoding
 }
 
 // Perm returns the file's OS permission attributes, querying the OS once.
@@ -92,10 +133,9 @@ func (f *File) Streams() []platform.Stream {
 // full rescan per finding.
 func (f *File) LineAt(offset int) int {
 	f.lineOnce.Do(func() {
-		content, err := f.Content()
-		if err != nil {
-			return
-		}
+		// Indexed over the decoded text, not the raw bytes, so a line number
+		// reported for a UTF-16 file means the same thing as for any other.
+		content := f.Text()
 		for i, b := range content {
 			if b == '\n' {
 				f.lineIndex = append(f.lineIndex, i)
@@ -148,6 +188,16 @@ func (f *File) Content() ([]byte, error) {
 		}
 		defer h.Close()
 
+		// Judged before a single byte is read. A hard link reaching out of the
+		// scope would otherwise pull outside content into the report under an
+		// inside path, which is precisely what the scope gate exists to stop.
+		f.links = f.sc.InspectLinks(h, f.Real)
+		if len(f.links.Outside) > 0 && !f.followLinked {
+			f.readErr = fmt.Errorf("%q is also named %s: %w",
+				f.Disp, f.links.Outside[0], scope.ErrOutOfScope)
+			return
+		}
+
 		limit := f.maxRead
 		buf, err := io.ReadAll(io.LimitReader(h, limit+1))
 		if err != nil {
@@ -184,9 +234,13 @@ func (f *File) Name() string { return strings.ToLower(filepath.Base(f.Real)) }
 // Size is the on-disk size in bytes.
 func (f *File) Size() int64 { return f.Info.Size() }
 
-// IsBinary uses the same heuristic as git: a NUL byte in the leading block
-// means the file is not text.
+// IsBinary uses the same heuristic as git - a NUL byte in the leading block -
+// but applies it to the decoded text rather than the raw bytes.
+//
+// That distinction is the whole fix for UTF-16: those files are half NUL bytes
+// on disk and the raw test called every one of them binary, which silently
+// skipped every text rule on them while still counting them as scanned. Once
+// decoded, real text has no NULs and real binaries still do.
 func (f *File) IsBinary() bool {
-	b := f.Header(8000)
-	return bytes.IndexByte(b, 0) >= 0
+	return looksBinary(f.Text())
 }

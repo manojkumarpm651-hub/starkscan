@@ -48,18 +48,19 @@ const (
 )
 
 type options struct {
-	checks      string
-	exclude     string
-	maxFileSize int64
-	hashes      string
-	minSeverity string
-	failOn      string
-	format      string
-	out         string
-	workers     int
-	listChecks  bool
-	showVersion bool
-	quiet       bool
+	checks          string
+	exclude         string
+	maxFileSize     int64
+	hashes          string
+	minSeverity     string
+	failOn          string
+	format          string
+	out             string
+	workers         int
+	listChecks      bool
+	showVersion     bool
+	quiet           bool
+	followHardLinks bool
 }
 
 func main() {
@@ -116,6 +117,8 @@ func run() int {
 	fs.BoolVar(&opt.listChecks, "list-checks", false, "list available checks and exit")
 	fs.BoolVar(&opt.showVersion, "version", false, "print the version and exit")
 	fs.BoolVar(&opt.quiet, "quiet", false, "suppress progress output on stderr")
+	fs.BoolVar(&opt.followHardLinks, "follow-hardlinks", false,
+		"read files whose content is also reachable from outside the selected scope; off by default, such content is refused and reported as SCOPE02")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "%s %s — scan selected folders and files for security threats\n\n", toolName, version)
@@ -247,9 +250,10 @@ func scanAll(opt options, targets []string) error {
 	walker := &scan.Walker{
 		Scope: sc,
 		Opts: scan.Options{
-			MaxFileSize: opt.maxFileSize,
-			Workers:     opt.workers,
-			Exclude:     splitList(opt.exclude),
+			MaxFileSize:     opt.maxFileSize,
+			Workers:         opt.workers,
+			Exclude:         splitList(opt.exclude),
+			FollowHardLinks: opt.followHardLinks,
 		},
 		OnBlocked: func(display, target string) {
 			emit(finding.Finding{
@@ -282,6 +286,45 @@ func scanAll(opt options, targets []string) error {
 
 	started := time.Now()
 	stats, walkErr := walker.Run(ctx, func(f *scan.File) {
+		// Settle the file's link situation before any rule reads it. A hard
+		// link out of the scope is refused here, so outside content never
+		// reaches a report under an inside path.
+		if links := f.LinkReport(); len(links.Outside) > 0 {
+			detail := "The file was not read. Path resolution cannot detect this: " +
+				"a hard link is not a reparse point, so the file genuinely has " +
+				"two equal directory entries and the content lives outside the " +
+				"folder you selected. Pass -follow-hardlinks to scan it anyway."
+			if opt.followHardLinks {
+				detail = "Read anyway because -follow-hardlinks was given. The " +
+					"content below comes from outside the folder you selected."
+			}
+			emit(finding.Finding{
+				RuleID:   "SCOPE02",
+				Check:    "scope",
+				Severity: finding.High,
+				Title:    "File content is also reachable from outside the scope",
+				Detail:   detail,
+				Path:     f.Disp,
+				Evidence: strings.Join(links.Outside, ", "),
+			})
+			if !opt.followHardLinks {
+				return
+			}
+		} else if links.Multi && !links.Resolved {
+			// Known to carry another name, but this platform cannot say
+			// where. Reported rather than silently trusted or refused.
+			emit(finding.Finding{
+				RuleID:   "SCOPE03",
+				Check:    "scope",
+				Severity: finding.Low,
+				Title:    "File has more than one name",
+				Detail: "The content is reachable under another name. This " +
+					"platform offers no way to locate the other names, so " +
+					"whether any lies outside the selected scope is unknown.",
+				Path: f.Disp,
+			})
+		}
+
 		for _, c := range active {
 			if ctx.Err() != nil {
 				return

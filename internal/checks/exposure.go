@@ -75,8 +75,7 @@ func (e *Exposure) checkKeyFile(f *scan.File, name, ext string, emit func(findin
 	}
 	// A .pem holding only a certificate is public material, so confirm there
 	// is actually a private key inside before raising the severity.
-	content, err := f.Content()
-	hasPrivate := err == nil && bytes.Contains(content, []byte("PRIVATE KEY"))
+	hasPrivate := bytes.Contains(f.Text(), []byte("PRIVATE KEY"))
 
 	sev := finding.Medium
 	detail := "Confirm whether this holds private key material and whether it belongs in a working folder."
@@ -140,8 +139,8 @@ func (e *Exposure) checkGitExposure(f *scan.File, emit func(finding.Finding)) {
 	if base != "config" && base != "fetch_head" && base != "packed-refs" {
 		return
 	}
-	content, err := f.Content()
-	if err != nil || !gitCredentialURL.Match(content) {
+	content := f.Text()
+	if !gitCredentialURL.Match(content) {
 		return
 	}
 	loc := gitCredentialURL.FindIndex(content)

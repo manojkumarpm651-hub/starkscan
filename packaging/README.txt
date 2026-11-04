@@ -106,8 +106,8 @@ Only the paths you pass on the command line.
   - No network access of any kind: no telemetry, no update check, no
     reputation lookup. It works fully offline and always has.
 
-One documented exception: a HARDLINK inside the scope pointing at a
-file outside it WILL be read. See LIMITATIONS.txt.
+A hardlink inside the scope that names content living outside it is
+refused, not followed, and reported as SCOPE02. See LIMITATIONS.txt.
 
 
 SUPPORT MATRIX

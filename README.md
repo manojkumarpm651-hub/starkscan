@@ -131,24 +131,33 @@ This is the tool's central design constraint, enforced in
 - Path comparison folds case on Windows, where NTFS would otherwise let a
   case-varied path slip past a case-sensitive check.
 
-### Known bypass: hardlinks
+### Hardlinks
 
-**A hardlink inside a selected folder can point at a file outside it, and this
-build will read that file and report its contents.** Verified, not theoretical.
+A hardlink inside a selected folder can name content that lives outside it.
+Path canonicalization cannot catch that: a hardlink is not a reparse point, so
+the file genuinely has two equal directory entries and there is nothing to
+resolve or refuse. Reading the inside entry would pull outside content into the
+report, under the inside path, where the substitution is invisible.
 
-This is a limit of the model rather than a coding slip. Path canonicalization
-resolves reparse points — symlinks and junctions — but a hardlink is not one.
-The file genuinely has two equal directory entries, and the one inside your
-scope is as real as the one outside, so there is nothing to resolve and nothing
-to refuse. The report shows the in-scope path, so the substitution is not
-visible in the output either.
+So the check is not a path check. Every file is asked how many names it has
+before a byte is read — one call on the handle already open, so ordinary files
+cost nothing extra. Only a file claiming more than one name is enumerated
+(`FindFirstFileNameW`), and each name is tested for containment:
 
-Detecting it needs link-count inspection rather than path work
-(`GetFileInformationByHandle` on Windows, `st_nlink` on Unix; neither needs
-elevation). Until that lands, treat the confinement guarantee as holding
-against symlinks and junctions but **not** against hardlinks, and do not rely
-on it alone when pointing the scanner at a directory an untrusted party can
-write to.
+- **A name outside the scope** → the content is **not read**, and `SCOPE02`
+  reports the outside path. Pass `-follow-hardlinks` to scan it anyway; the
+  finding is still raised, so the report always says where the content came
+  from.
+- **Every name inside the scope** → scanned normally. Two names for the same
+  content are unremarkable when both are in the folder you chose.
+- **More than one name, locations unknowable** → `SCOPE03`, and the file is
+  scanned. This is the Unix case: POSIX offers no way to map an inode back to
+  its names without walking the whole filesystem, so the honest answer is that
+  the file has another name and this build cannot say where.
+
+Nothing needs elevation. On a 263-file sample of ordinary trees this produced
+no findings at all, which is the behaviour that matters — refusing to read
+normal files would be a worse failure than the bypass it replaced.
 
 **What this is not:** OS-level sandboxing. Confinement is enforced in-process.
 A bug in this program could still read outside the scope, and a compromised
@@ -207,6 +216,31 @@ reported too.
 
 Only `READ_CONTROL` is needed, so this runs as an ordinary user and never elevates.
 
+## Encodings
+
+Text rules match the file **decoded to UTF-8**, not the raw bytes.
+
+That distinction is the whole of the UTF-16 fix. A NUL byte is the usual signal
+that a file is binary, and UTF-16 text is half NUL bytes, so judging by the raw
+bytes wrote off every UTF-16 file as binary and skipped every text rule on it
+while still counting it as scanned. Windows produces UTF-16 routinely, so those
+were everyday misses rather than exotic ones.
+
+Detection takes the byte-order mark when there is one, and the position of the
+NUL bytes when there is not. Neither is sufficient on its own: an ELF image, a
+zip header, or any run of 16-bit little-endian fields puts a zero in every
+other byte exactly as Latin UTF-16 does. So a candidate encoding is only
+accepted if decoding actually yields text, measured as the proportion of plain
+ASCII. Tests assert that PE, ELF, zip and all-zero content are still classified
+as bytes, because promoting a binary to text would hand every rule nonsense.
+
+Line numbers index the decoded view, so a reported line means the same thing
+whatever the encoding — the line you would count opening the file in an editor,
+not a byte offset doubled by UTF-16.
+
+Hashing, archive parsing, magic bytes and entropy all still read the raw bytes,
+because those describe the file as stored rather than what it says.
+
 ## Performance
 
 Roughly **0.7 ms per file**, dominated by I/O and per-file syscalls rather than
@@ -264,11 +298,12 @@ could hold 16 x 32 MiB at once.
 **Verified blind spots.** These were each demonstrated against the shipping
 build, not inferred from the code:
 
-- **UTF-16 files are never scanned for secrets.** A NUL byte in the first 8 KB
-  marks a file binary, and UTF-16 text is half NUL bytes. This is Windows' own
-  encoding for redirected PowerShell output and many exported configs, so the
-  misses are routine rather than exotic — and such files are still counted as
-  scanned.
+- **A UTF-16 document in a non-Latin script is skipped by the text rules.**
+  UTF-16 itself is now decoded and scanned — see Encodings below — but the
+  detector requires the decoded sample to be mostly ASCII, because deciding a
+  binary is text would feed every rule nonsense. A file written wholly in, say,
+  Chinese fails that bar. It carries nothing the rules match anyway, since
+  credentials and command lines are ASCII, but the gap is real.
 - **A real credential whose value contains a word from the placeholder list**
   (`example`, `sample`, `test`, `fake`, `dummy`, …) is dropped. A structurally
   valid `AKIA…` key is skipped if it happens to spell one of them.

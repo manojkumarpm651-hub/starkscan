@@ -2,7 +2,10 @@
 // detection rules stay portable and testable.
 package platform
 
-import "io/fs"
+import (
+	"io/fs"
+	"os"
+)
 
 // Perm describes exposure-relevant attributes of a file.
 //
@@ -35,6 +38,20 @@ func Hidden(info fs.FileInfo) bool { return hidden(info) }
 // that stays open afterwards. Output would otherwise vanish the instant the
 // program exits.
 func OwnsConsole() bool { return ownsConsole() }
+
+// LinkCount reports how many directory entries refer to the same file
+// content, and whether the answer could be obtained.
+//
+// More than one means the content is reachable under another name, which path
+// resolution cannot detect: a hard link is not a reparse point, so the file
+// genuinely has two equal entries and there is nothing to follow.
+func LinkCount(f *os.File) (uint32, bool) { return linkCount(f) }
+
+// HardLinkPaths lists every absolute path that names the same content as path.
+// It returns nil where the platform offers no way to enumerate them, which is
+// the case everywhere except Windows; the caller must treat nil as "unknown"
+// rather than "there are none".
+func HardLinkPaths(path string) []string { return hardLinkPaths(path) }
 
 // Stream is one alternate data stream attached to a file.
 type Stream struct {

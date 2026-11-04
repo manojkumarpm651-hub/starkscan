@@ -154,8 +154,10 @@ func (s *Secrets) Inspect(ctx context.Context, f *scan.File, emit func(finding.F
 	if f.IsBinary() {
 		return
 	}
-	content, err := f.Content()
-	if err != nil || len(content) == 0 {
+	// Text, not raw bytes: a UTF-16 config holds credentials just as a UTF-8
+	// one does, and matching the raw form would find nothing in it.
+	content := f.Text()
+	if len(content) == 0 {
 		return
 	}
 

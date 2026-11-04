@@ -7,29 +7,33 @@ build, not inferred from reading the code.
 Read this before you rely on a clean result.
 
 
-1. THE CONFINEMENT GUARANTEE HAS ONE KNOWN BYPASS
+1. HARDLINKS OUT OF THE SCOPE ARE REFUSED, NOT FOLLOWED
 ---------------------------------------------------------------------
-A HARDLINK inside a scanned folder, pointing at a file outside it,
-will be read and its contents reported. No warning is issued, and the
-report shows the in-scope path, so the substitution is invisible in
-the output.
+A hardlink inside a scanned folder can name content that lives outside
+it. Path resolution cannot see that: a hardlink is not a reparse
+point, so the file genuinely has two equal directory entries.
 
-Path resolution cannot catch this. A hardlink is not a reparse point:
-the file genuinely has two equal directory entries, and the one inside
-your scope is as real as the one outside. Symlinks and junctions ARE
-correctly refused; hardlinks are not.
+Every file is therefore asked how many names it has before it is read.
+A file whose content is also reachable from outside the scope is NOT
+read, and the scan reports SCOPE02 naming the outside path. Pass
+-follow-hardlinks to scan it anyway; the finding is still raised, so
+the report always says where the content came from.
 
-  Practical effect: do not rely on scope confinement alone when
-  pointing the scanner at a directory an untrusted party can write to.
+On Linux and macOS the number of names is known but their locations
+are not - POSIX offers no way to map content back to its names without
+walking the entire filesystem. Those files are reported as SCOPE03 and
+still scanned, because "this file has another name somewhere" is not
+grounds to refuse it.
 
 
 2. FILES THAT ARE SILENTLY NOT SEARCHED FOR SECRETS
 ---------------------------------------------------------------------
-  UTF-16 text.  A NUL byte in the first 8 KB marks a file as binary,
-  and UTF-16 text is half NUL bytes. This is Windows' own encoding for
-  redirected PowerShell output and many exported configuration files,
-  so these misses are routine rather than exotic. Such files are still
-  counted as "scanned" in the summary.
+  Non-Latin UTF-16.  UTF-16 itself is decoded and scanned. But a file
+  is only treated as text if the decoded sample is mostly ASCII, since
+  deciding a binary is text would feed every rule nonsense. A document
+  written wholly in a non-Latin script fails that bar and is skipped
+  by the text rules. It carries nothing those rules match anyway -
+  credentials and command lines are ASCII - but the gap is real.
 
   Binaries.  Secrets compiled into an .exe, .dll, or database file are
   not found; the secrets check is skipped for binary content entirely.

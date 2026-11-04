@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"starkscan/internal/platform"
 )
 
 // ErrOutOfScope is returned when a path resolves outside every allowed root.
@@ -136,6 +138,62 @@ func (s *Scope) Open(p string) (*os.File, error) {
 		return nil, fmt.Errorf("%q: %w", p, ErrNotRegular)
 	}
 	return f, nil
+}
+
+// LinkReport describes the other names a file is reachable by.
+type LinkReport struct {
+	// Outside lists names for the same content that fall outside the scope.
+	Outside []string
+	// Multi is true when the file has more than one name, whether or not
+	// those names could be located.
+	Multi bool
+	// Resolved is true when every name was enumerated, so an empty Outside
+	// really means none. When false the question could not be answered and
+	// an empty Outside means only that nothing is known.
+	Resolved bool
+}
+
+// InspectLinks reports whether an open file's content is also reachable from
+// outside the scope.
+//
+// This closes the one gap path canonicalization cannot: a hard link is not a
+// reparse point. The file genuinely has two equal directory entries, so there
+// is no link to resolve and no traversal to refuse, yet reading the entry
+// inside the scope pulls in content that lives outside it - and the report
+// names the inside path, so the substitution is invisible in the output.
+//
+// The handle is used rather than the path so the answer describes the exact
+// file about to be read, and the usual case costs a single call: only a file
+// that already claims more than one name is enumerated.
+func (s *Scope) InspectLinks(h *os.File, real string) LinkReport {
+	n, ok := platform.LinkCount(h)
+	if !ok {
+		return LinkReport{}
+	}
+	if n <= 1 {
+		return LinkReport{Resolved: true}
+	}
+
+	names := platform.HardLinkPaths(real)
+	if names == nil {
+		// The platform cannot map content back to its names. The file is
+		// known to have more than one, but not where the others are.
+		return LinkReport{Multi: true}
+	}
+
+	rep := LinkReport{Multi: true, Resolved: true}
+	for _, name := range names {
+		canon, err := canonical(name)
+		if err != nil {
+			// A name that cannot be resolved cannot be cleared either.
+			rep.Resolved = false
+			continue
+		}
+		if !s.Contains(canon) {
+			rep.Outside = append(rep.Outside, canon)
+		}
+	}
+	return rep
 }
 
 // Display renders a canonical path the way the operator will recognize it:
